@@ -213,6 +213,7 @@ def prepare_model_cached(model_ckpt: Path, gpu: int):
     model = model_factory.load_from_checkpoint(
         model_name.split("@")[0], model_ckpt, gpu
     )
+    model = model.cuda(gpu)
     model.eval()
 
     return model
