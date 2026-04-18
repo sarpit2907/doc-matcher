@@ -1,14 +1,12 @@
 from typing import Dict
 from colorama import Fore
-from tqdm import tqdm
 from pathlib import Path
 
 import multiprocessing
 import atexit
 
-from .feature_extractor.extract import extract_all_frenet_features, _extract_task
+from .feature_extractor.extract import extract_all_frenet_features
 from .line_lightglue.inference import inference_lightglue
-from .line_lightglue.visualize import visualize_matching_inner
 from .update_lines import update_lines
 
 
@@ -24,6 +22,7 @@ def inference(
     num_workers: int,
     gpu: int,
     visualize: bool,
+    matcher_conf: Dict | None = None,
 ):
     print(Fore.GREEN + "[STAGE] Matching lines" + Fore.RESET)
 
@@ -70,6 +69,7 @@ def inference(
         gpu=gpu,
         num_workers=num_workers,
         visualize=visualize,
+        matcher_conf=matcher_conf,
     )
 
 

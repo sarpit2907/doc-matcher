@@ -1,17 +1,24 @@
 import tqdm
 import pylcs
 from typing import Dict
-import argparse
 import json
-import torch
-import pytorch_lightning as pl
-from torch.utils.data import DataLoader
 from pathlib import Path
+
+import torch
+from torch.utils.data import DataLoader
 
 from ..feature_extractor.dataset import FrenetDataset, collate_fn
 from .visualize import visualize_matching_inner
 
-from .lit_line_lightglue import LitLineLightglue
+from .lit_line_lightglue import LitLineLightglue, build_matcher_conf
+
+
+def checkpoint_has_graph_weights(model_checkpoint: str | Path) -> bool:
+    checkpoint = torch.load(model_checkpoint, map_location="cpu")
+    state_dict = checkpoint.get("state_dict", checkpoint)
+    return any(
+        "edge_encoder" in key or "graph_gate" in key for key in state_dict.keys()
+    )
 
 
 @torch.no_grad()
@@ -27,13 +34,28 @@ def inference_lightglue(
     gpu: int,
     num_workers: int,
     visualize: bool,
+    matcher_conf: Dict | None = None,
 ):
 
     device = f"cuda:{gpu}" if torch.cuda.is_available() else "cpu"
+    load_kwargs = {}
+    if matcher_conf is not None:
+        matcher_conf = build_matcher_conf(matcher_conf)
+        load_kwargs["conf"] = matcher_conf
+
+    if matcher_conf and matcher_conf["use_graph_transformer"] and not checkpoint_has_graph_weights(
+        model_checkpoint
+    ):
+        print(
+            "WARNING: GNN matcher is enabled, but the checkpoint does not contain "
+            "graph-specific weights. This will run as a graph-initialized model "
+            "until you fine-tune and save a GNN checkpoint."
+        )
 
     model = LitLineLightglue.load_from_checkpoint(
         model_checkpoint,
         map_location=torch.device(device),
+        **load_kwargs,
     )
     model = model.to(device)
     model.eval()

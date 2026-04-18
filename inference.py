@@ -5,14 +5,15 @@ from pathlib import Path
 from typing import Optional
 
 import gdown
-import yaml
 import shutil
+import yaml
 
 
 project_dir = Path(__file__).parent.resolve()
 sys.path.insert(0, str(project_dir / "src"))
 
 from inv3d_util.path import list_dirs
+from src.line_matching.line_lightglue.lit_line_lightglue import build_matcher_conf
 from src.util import download_and_extract
 
 model_sources = yaml.safe_load((project_dir / "models.yaml").read_text())
@@ -28,7 +29,12 @@ MODEL_TO_PIPELINE = {
 
 
 def inference(
-    model_name: str, dataset: str, max_cpus: int, limit_samples: Optional[int]
+    model_name: str,
+    dataset: str,
+    max_cpus: int,
+    limit_samples: Optional[int],
+    line_matching_checkpoint: Optional[str] = None,
+    line_matching_conf: Optional[dict] = None,
 ):
 
     model_parts = model_name.split("@") + [None]
@@ -72,6 +78,8 @@ def inference(
         max_workers=max_cpus,
         gpu=0,
         limit_samples=limit_samples,
+        line_matching_checkpoint=line_matching_checkpoint,
+        line_matching_conf=line_matching_conf,
     )
 
     pipeline_parts = pipeline.split("_")
@@ -152,6 +160,37 @@ if __name__ == "__main__":
         default=None,
         help="Limit the number of dataset samples to process.",
     )
+    parser.add_argument(
+        "--lightglue-checkpoint",
+        type=str,
+        required=False,
+        default=None,
+        help="Optional LightGlue checkpoint override for the line-matching stage.",
+    )
+    parser.add_argument(
+        "--enable-gnn-line-matcher",
+        action="store_true",
+        help="Enable the GNN/Graph Transformer matcher during DocMatcher inference.",
+    )
+    parser.add_argument(
+        "--graph-k-neighbors",
+        type=int,
+        required=False,
+        default=5,
+        help="Number of external neighbors per node in the GNN matcher.",
+    )
+    parser.add_argument(
+        "--graph-edge-dim",
+        type=int,
+        required=False,
+        default=4,
+        help="Edge feature dimension for the GNN matcher. Current implementation expects 4.",
+    )
+    parser.add_argument(
+        "--graph-sparse-attention",
+        action="store_true",
+        help="Restrict self-attention to graph neighbors during inference.",
+    )
 
     args = parser.parse_args()
 
@@ -160,9 +199,27 @@ if __name__ == "__main__":
     # import the runner after setting the CUDA_VISIBLE_DEVICES environment variable to initialize torch with the correct GPU
     from src.runner import Runner
 
+    line_matching_conf = None
+    if (
+        args.enable_gnn_line_matcher
+        or args.graph_sparse_attention
+        or args.graph_k_neighbors != 5
+        or args.graph_edge_dim != 4
+    ):
+        line_matching_conf = build_matcher_conf(
+            {
+                "use_graph_transformer": args.enable_gnn_line_matcher,
+                "graph_k_neighbors": args.graph_k_neighbors,
+                "graph_edge_dim": args.graph_edge_dim,
+                "graph_sparse_attention": args.graph_sparse_attention,
+            }
+        )
+
     inference(
         model_name=args.model,
         dataset=args.dataset,
         max_cpus=args.max_cpus,
         limit_samples=args.limit_samples,
+        line_matching_checkpoint=args.lightglue_checkpoint,
+        line_matching_conf=line_matching_conf,
     )

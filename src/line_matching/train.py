@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Dict
+
 from .line_lightglue.train import train_line_lightglue
 
 
@@ -12,6 +13,9 @@ def train(
     limit_val_samples: int,
     num_workers: int,
     gpu: int,
+    matcher_conf: Dict | None = None,
+    init_checkpoint: str | None = None,
+    learning_rate: float = 0.0001,
 ):
     log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -33,4 +37,7 @@ def train(
         limit_val_samples=limit_val_samples,
         num_workers=num_workers,
         gpu=gpu,
+        matcher_conf=matcher_conf,
+        init_checkpoint=init_checkpoint,
+        learning_rate=learning_rate,
     )

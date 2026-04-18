@@ -1,10 +1,8 @@
 from typing import Dict
-import argparse
-import json
-import torch
-import pytorch_lightning as pl
-from torch.utils.data import DataLoader
 from pathlib import Path
+import pytorch_lightning as pl
+import torch
+from torch.utils.data import DataLoader
 
 from ..feature_extractor.dataset import FrenetDataset, collate_fn
 
@@ -23,10 +21,24 @@ def train_line_lightglue(
     limit_val_samples: int,
     num_workers: int,
     gpu: int,
+    matcher_conf: Dict | None = None,
+    init_checkpoint: str | None = None,
+    learning_rate: float = 0.0001,
 ):
     torch.set_float32_matmul_precision("high")
 
-    model = LitLineLightglue()
+    if init_checkpoint:
+        print(f"Initializing LightGlue training from checkpoint: {init_checkpoint}")
+        load_kwargs = {"learning_rate": learning_rate}
+        if matcher_conf is not None:
+            load_kwargs["conf"] = matcher_conf
+        model = LitLineLightglue.load_from_checkpoint(
+            init_checkpoint,
+            map_location="cpu",
+            **load_kwargs,
+        )
+    else:
+        model = LitLineLightglue(conf=matcher_conf, learning_rate=learning_rate)
 
     trainer = pl.Trainer(
         max_epochs=-1,

@@ -81,8 +81,8 @@ class LineSelfBlock(nn.Module):
 class LineTransformerLayer(nn.Module):
     """Combined self-attention + cross-attention layer for line matching.
     
-    CHANGED: The self-attention component now uses GraphTransformerBlock
-    instead of LineSelfBlock when use_graph_transformer=True (default).
+    CHANGED: The self-attention component can use GraphTransformerBlock
+    instead of LineSelfBlock when use_graph_transformer=True.
     
     The cross-attention (CrossBlock) remains UNCHANGED — it handles
     warped<->template line attention and doesn't need graph structure
@@ -182,8 +182,9 @@ class LineLightGlue(nn.Module):
             "fn": "nll",
             "nll_balancing": 0.5,
         },
-        # CHANGED: New config options for Graph Transformer integration
-        "use_graph_transformer": True,   # Enable GNN+Graph Transformer in self-attention
+        # CHANGED: New config options for Graph Transformer integration.
+        # Keep the released DocMatcher checkpoint baseline-correct by default.
+        "use_graph_transformer": False,  # Enable GNN+Graph Transformer in self-attention
         "graph_k_neighbors": 5,          # Number of neighbors in k-NN graph
         "graph_edge_dim": 4,             # Dimension of edge features
         "graph_sparse_attention": False,  # If True, mask non-neighbors to -inf

@@ -8,6 +8,12 @@ For more details see our project page [project page](https://felixhertlein.githu
 
 ## Usage
 
+### Remote JupyterLab GPU
+
+For a notebook-friendly remote GPU workflow, including GNN matcher fine-tuning
+and full-pipeline inference with a custom checkpoint, see
+[docs/jupyter_remote_gpu.md](docs/jupyter_remote_gpu.md).
+
 ### VS-Code Devcontainer
 
 We highly recommend to use the provided Devcontainer to make the usage as easy as possible:
@@ -26,6 +32,10 @@ We highly recommend to use the provided Devcontainer to make the usage as easy a
 ### Start the inference
 
 `python inference.py --model docmatcher@inv3d --dataset inv3d_real --gpu 0`
+
+To run the GNN matcher after fine-tuning a custom LightGlue checkpoint:
+
+`python inference.py --model docmatcher@inv3d --dataset inv3d_real --gpu 0 --enable-gnn-line-matcher --lightglue-checkpoint PATH_TO_GNN_CHECKPOINT`
 
 ### Models
 
@@ -129,6 +139,9 @@ For the line detection model:
 
 For the line matching model:
 `python train.py --model-part lightglue --gpu 0`
+
+For GNN matcher fine-tuning from the released LightGlue checkpoint:
+`python train.py --model-part lightglue --gpu 0 --enable-gnn --experiment-name inv3d_former2_glue1_gnn`
 
 ### Help
 

@@ -107,6 +107,8 @@ class LineGraphBuilder:
             in graph transformers and preserves the residual connection behavior.
     """
 
+    EDGE_FEATURE_DIM = 4
+
     def __init__(self, k_neighbors: int = 5, self_loops: bool = True):
         self.k_neighbors = k_neighbors
         self.self_loops = self_loops
@@ -133,8 +135,9 @@ class LineGraphBuilder:
         """
         B, N, D = descriptors.shape
 
-        # Clamp k to not exceed the number of available nodes
-        k = min(self.k_neighbors, N)
+        # Interpret k_neighbors as the number of EXTERNAL neighbors.
+        # Self-loops are handled separately below.
+        k = min(self.k_neighbors, max(N - 1, 0))
 
         # ==== STEP 1: Compute graph topology (non-differentiable) ====
         # We detach descriptors for topology computation because the top-k
@@ -143,14 +146,20 @@ class LineGraphBuilder:
             desc_norm = F.normalize(descriptors.detach(), p=2, dim=-1)
             sim_detached = torch.bmm(desc_norm, desc_norm.transpose(1, 2))
 
-            # Select top-k most similar neighbors for each node
-            _, topk_indices = sim_detached.topk(k, dim=-1)  # (B, N, k)
+            # Exclude self-matches from the k-NN search and add self-loops later.
+            if N > 0:
+                eye = torch.eye(
+                    N, device=descriptors.device, dtype=torch.bool
+                ).unsqueeze(0)
+                sim_detached = sim_detached.masked_fill(eye, float("-inf"))
 
             # Create binary adjacency matrix from top-k indices
             adj_matrix = torch.zeros(
                 B, N, N, device=descriptors.device, dtype=torch.bool
             )
-            adj_matrix.scatter_(2, topk_indices, True)
+            if k > 0:
+                _, topk_indices = sim_detached.topk(k, dim=-1)  # (B, N, k)
+                adj_matrix.scatter_(2, topk_indices, True)
 
             # Make symmetric: if line_i connects to line_j, line_j connects to line_i
             # This ensures the graph is undirected, matching document structure
@@ -158,9 +167,7 @@ class LineGraphBuilder:
 
             # Add self-loops so each node always attends to itself
             if self.self_loops:
-                eye = torch.eye(
-                    N, device=descriptors.device, dtype=torch.bool
-                ).unsqueeze(0)
+                eye = torch.eye(N, device=descriptors.device, dtype=torch.bool).unsqueeze(0)
                 adj_matrix = adj_matrix | eye
 
         # ==== STEP 2: Compute edge features (differentiable) ====
@@ -216,10 +223,10 @@ class GraphTransformerBlock(nn.Module):
        This allows the model to learn that certain relationships (e.g., high
        similarity, small distance) should increase attention between lines.
 
-    3. GRAPH GATE: A learnable scalar parameter (initialized to 0.1) that
-       controls the strength of graph bias. At initialization, the gate is
-       small so the model behaves close to standard self-attention, preserving
-       pretrained behavior. During fine-tuning, the gate adapts.
+    3. GRAPH GATE: A learnable scalar parameter (initialized to 0.0) that
+       controls the strength of graph bias. At initialization, the gate keeps
+       the model behavior-compatible with the released baseline checkpoint.
+       During fine-tuning, the gate adapts to introduce graph structure.
 
     4. OPTIONAL SPARSE MASKING: When use_sparse_attention=True, non-neighbor
        nodes receive -inf attention score and contribute nothing. This enforces
@@ -235,7 +242,7 @@ class GraphTransformerBlock(nn.Module):
     Args:
         embed_dim (int): Dimension of input embeddings (256 for DocMatcher)
         num_heads (int): Number of attention heads (4 for DocMatcher)
-        edge_dim (int): Dimension of edge features from LineGraphBuilder (4)
+        edge_dim (int): Dimension of edge features from LineGraphBuilder (must be 4)
         k_neighbors (int): Number of neighbors in k-NN graph (default: 5)
         use_sparse_attention (bool): If True, mask non-neighbors (default: False)
         flash (bool): Kept for API compatibility with LineSelfBlock
@@ -262,6 +269,11 @@ class GraphTransformerBlock(nn.Module):
 
         assert embed_dim % num_heads == 0, \
             f"embed_dim ({embed_dim}) must be divisible by num_heads ({num_heads})"
+        if edge_dim != LineGraphBuilder.EDGE_FEATURE_DIM:
+            raise ValueError(
+                f"edge_dim must be {LineGraphBuilder.EDGE_FEATURE_DIM} "
+                f"for the current LineGraphBuilder implementation, got {edge_dim}."
+            )
 
         # ===================================================================
         # ORIGINAL PARAMETERS — identical names to LineSelfBlock
@@ -305,12 +317,11 @@ class GraphTransformerBlock(nn.Module):
         )
 
         # Learnable gate controlling graph bias strength.
-        # Initialized to 0.1 (small but non-zero) so:
-        # - The model is NOT identical to the original (graph has immediate effect)
-        # - But the effect is small enough to not break pretrained behavior
-        # - During fine-tuning, this value adapts to the optimal strength
+        # Initialized to 0.0 so loading the released LightGlue checkpoint into
+        # the GNN architecture is behavior-preserving until fine-tuning learns
+        # a useful graph contribution.
         # CHANGED: This is a new learnable scalar parameter
-        self.graph_gate = nn.Parameter(torch.tensor(0.1))
+        self.graph_gate = nn.Parameter(torch.tensor(0.0))
 
         # Cache for visualization/debugging — stores info from last forward pass
         self._last_adj_matrix = None
@@ -392,6 +403,11 @@ class GraphTransformerBlock(nn.Module):
         # based on structural relationships between lines.
         edge_bias = self.edge_encoder(edge_features)  # (B, N, N, num_heads)
         edge_bias = edge_bias.permute(0, 3, 1, 2)     # (B, num_heads, N, N)
+
+        # Restrict graph bias to graph-connected pairs even in dense-attention
+        # mode. This makes the k-NN graph meaningful without forcing sparse
+        # masking.
+        edge_bias = edge_bias.masked_fill(~adj_matrix.unsqueeze(1), 0.0)
 
         # Scale the graph bias by the learnable gate parameter
         attn_logits = attn_logits + self.graph_gate * edge_bias

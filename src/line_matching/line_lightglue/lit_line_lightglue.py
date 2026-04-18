@@ -1,44 +1,49 @@
 import pytorch_lightning as pl
-from .line_lightglue_model import LineLightGlue
 import torch
+from torch import optim
 
-from torch import nn, optim
+from .line_lightglue_model import LineLightGlue
+
+
+DEFAULT_MATCHER_CONF = {
+    "name": "matchers.linelightglue",
+    "filter_threshold": 0.1,
+    "flash": False,
+    "checkpointed": True,
+    # Keep the released DocMatcher checkpoint baseline-correct by default.
+    "use_graph_transformer": False,
+    "graph_k_neighbors": 5,
+    "graph_edge_dim": 4,
+    "graph_sparse_attention": False,
+}
+
+
+def build_matcher_conf(conf=None):
+    merged = dict(DEFAULT_MATCHER_CONF)
+    if conf:
+        merged.update({key: value for key, value in conf.items() if value is not None})
+    return merged
 
 
 class LitLineLightglue(pl.LightningModule):
     """
     PyTorch Lightning wrapper for the LineLightGlue matching model.
 
-    CHANGED: Added load_state_dict override with strict=False to support
-    the new Graph Transformer parameters. When loading a pretrained checkpoint
-    that was trained with the original LineSelfBlock, the new graph-specific
-    parameters (edge_encoder, graph_gate) will not be in the checkpoint.
-    Using strict=False allows these to keep their default initialization
-    (small graph_gate=0.1, randomly initialized edge_encoder) while all
-    original parameters (Wqkv, out_proj, ffn, etc.) load normally.
+    The matcher config is explicit so notebook workflows can switch between the
+    released baseline and a GNN fine-tuning run without editing source files.
     """
-    def __init__(self):
+    def __init__(self, conf=None, learning_rate: float = 0.0001):
         super().__init__()
 
-        conf = {
-            "name": "matchers.linelightglue",
-            "filter_threshold": 0.1,
-            "flash": False,
-            "checkpointed": True,
-            # CHANGED: Enable GNN + Graph Transformer for self-attention.
-            # Set to False to revert to original LineSelfBlock behavior.
-            "use_graph_transformer": True,
-            "graph_k_neighbors": 5,      # k-NN graph connectivity
-            "graph_edge_dim": 4,          # Edge feature dimension
-            "graph_sparse_attention": False,  # Sparse attention masking
-        }
+        self.model_conf = build_matcher_conf(conf)
+        self.save_hyperparameters({"conf": self.model_conf, "learning_rate": learning_rate})
 
-        self.model = LineLightGlue(conf)
-        self.learning_rate = 0.0001
+        self.model = LineLightGlue(self.model_conf)
+        self.learning_rate = learning_rate
 
     def load_state_dict(self, state_dict, strict=True):
         """
-        CHANGED: Override to use strict=False for Graph Transformer compatibility.
+        Override to use strict=False for Graph Transformer compatibility.
 
         The pretrained checkpoint contains weights for the original LineSelfBlock
         parameters (Wqkv, out_proj, ffn). The new GraphTransformerBlock has the
@@ -48,7 +53,7 @@ class LitLineLightglue(pl.LightningModule):
         Using strict=False allows:
         - Original parameters → loaded from checkpoint ✓
         - edge_encoder → default random initialization ✓
-        - graph_gate → initialized to 0.1 ✓
+        - graph_gate → initialized to 0.0 ✓
         """
         return super().load_state_dict(state_dict, strict=False)
 

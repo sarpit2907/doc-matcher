@@ -2,7 +2,7 @@ from copy import deepcopy
 import os
 import shutil
 import subprocess
-from typing import Optional
+from typing import Dict, Optional
 import torch
 import warnings
 
@@ -48,6 +48,11 @@ class Runner:
         max_workers: int,
         gpu: int,
         limit_samples: Optional[int],
+        line_matching_checkpoint: Optional[str] = None,
+        line_matching_init_checkpoint: Optional[str] = None,
+        line_matching_conf: Optional[Dict] = None,
+        line_matching_learning_rate: float = 0.0001,
+        line_matching_training_run_name: Optional[str] = None,
     ):
         self.config = parse_config(
             config_file=config_file,
@@ -63,6 +68,17 @@ class Runner:
         self.data_dir = Path("cache")
         self.models_dir = Path("models")
         self.limit_samples = limit_samples
+        self.line_matching_checkpoint = (
+            Path(line_matching_checkpoint) if line_matching_checkpoint else None
+        )
+        self.line_matching_init_checkpoint = (
+            Path(line_matching_init_checkpoint)
+            if line_matching_init_checkpoint
+            else None
+        )
+        self.line_matching_conf = line_matching_conf
+        self.line_matching_learning_rate = line_matching_learning_rate
+        self.line_matching_training_run_name = line_matching_training_run_name
 
         multiprocessing.set_start_method("spawn", force=True)
         atexit.register(end_processes)
@@ -152,13 +168,15 @@ class Runner:
                 inputs=stage["inputs"],
                 outputs=stage["outputs"],
                 split=self.split,
-                model_checkpoint=self.models_dir / stage["model"],
+                model_checkpoint=self.line_matching_checkpoint
+                or self.models_dir / stage["model"],
                 feature_params=stage["feature_params"],
                 statistics=stage["statistics"],
                 min_num_features=stage["min_num_features"],
                 num_workers=self.max_workers,
                 gpu=self.gpu,
                 visualize=self.split == "real",
+                matcher_conf=self.line_matching_conf,
             )
 
         if stage_category == "unwarp_correspondence":
@@ -288,7 +306,10 @@ class Runner:
             print(Fore.GREEN + f"[STAGE] Training Lightglue" + Fore.RESET)
             line_matching.train(
                 feature_dir=self.data_dir / stage["base_dir"],
-                log_dir=self.models_dir / "training" / "lightglue" / stage_name,
+                log_dir=self.models_dir
+                / "training"
+                / "lightglue"
+                / (self.line_matching_training_run_name or stage_name),
                 statistics=stage["statistics"],
                 min_num_features=stage["min_num_features"],
                 limit_val_samples=stage["limit_val_samples"],
@@ -299,6 +320,9 @@ class Runner:
                 ),
                 num_workers=self.max_workers,
                 gpu=self.gpu,
+                matcher_conf=self.line_matching_conf,
+                init_checkpoint=self.line_matching_init_checkpoint,
+                learning_rate=self.line_matching_learning_rate,
             )
 
         if stage_category == "unwarp_corresondence":
