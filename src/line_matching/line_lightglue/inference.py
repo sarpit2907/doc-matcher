@@ -35,6 +35,7 @@ def inference_lightglue(
         model_checkpoint,
         map_location=torch.device(device),
     )
+    model = model.to(device)
     model.eval()
 
     # prepare data

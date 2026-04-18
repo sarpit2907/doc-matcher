@@ -8,6 +8,12 @@ from torch.utils.checkpoint import checkpoint
 
 from . import line_encoder
 
+# CHANGED: Import the new Graph Transformer block that replaces LineSelfBlock.
+# GraphTransformerBlock enhances self-attention with graph-structural bias,
+# building a k-NN graph from line descriptors and using edge features to
+# modulate attention scores. It is weight-compatible with LineSelfBlock.
+from .graph_transformer import GraphTransformerBlock
+
 from .original.utils.losses import NLLLoss
 from .original.utils.metrics import matcher_metrics
 
@@ -25,7 +31,22 @@ from .original.lightglue import (
 )
 
 
+# CHANGED: The original LineSelfBlock class is kept below for reference but
+# is no longer used in LineTransformerLayer when use_graph_transformer=True.
+# It has been replaced by GraphTransformerBlock from graph_transformer.py,
+# which adds graph-structural bias to the self-attention mechanism.
+#
+# KEY DIFFERENCE: LineSelfBlock treats all lines as a fully-connected set
+# (every line attends equally to every other line). GraphTransformerBlock
+# builds a k-NN graph and biases attention towards structurally related lines.
+
 class LineSelfBlock(nn.Module):
+    """Original self-attention block (kept for backward compatibility).
+    
+    This is the baseline self-attention that treats all lines equally.
+    When use_graph_transformer=True in the config, LineTransformerLayer
+    uses GraphTransformerBlock instead of this class.
+    """
     def __init__(
         self, embed_dim: int, num_heads: int, flash: bool = False, bias: bool = True
     ) -> None:
@@ -58,10 +79,60 @@ class LineSelfBlock(nn.Module):
 
 
 class LineTransformerLayer(nn.Module):
-    def __init__(self, *args, **kwargs):
+    """Combined self-attention + cross-attention layer for line matching.
+    
+    CHANGED: The self-attention component now uses GraphTransformerBlock
+    instead of LineSelfBlock when use_graph_transformer=True (default).
+    
+    The cross-attention (CrossBlock) remains UNCHANGED — it handles
+    warped<->template line attention and doesn't need graph structure
+    since it operates across two different sets of lines.
+    
+    Architecture per layer:
+        1. Self-attention (with graph bias): refine each image's line descriptors
+        2. Cross-attention: exchange information between warped and template lines
+    """
+    # CHANGED: Added graph-specific parameters separated from CrossBlock params.
+    # Graph params are only passed to GraphTransformerBlock, not to CrossBlock.
+    def __init__(
+        self,
+        embed_dim: int,
+        num_heads: int,
+        use_graph_transformer: bool = True,
+        graph_k_neighbors: int = 5,
+        graph_edge_dim: int = 4,
+        graph_sparse_attention: bool = False,
+        flash: bool = False,
+        bias: bool = True,
+    ):
         super().__init__()
-        self.self_attn = LineSelfBlock(*args, **kwargs)
-        self.cross_attn = CrossBlock(*args, **kwargs)
+        if use_graph_transformer:
+            # CHANGED: Use Graph Transformer for self-attention with explicit
+            # graph config params. These are NOT passed to CrossBlock.
+            self.self_attn = GraphTransformerBlock(
+                embed_dim=embed_dim,
+                num_heads=num_heads,
+                edge_dim=graph_edge_dim,
+                k_neighbors=graph_k_neighbors,
+                use_sparse_attention=graph_sparse_attention,
+                flash=flash,
+                bias=bias,
+            )
+        else:
+            # Original: fully-connected self-attention (no graph structure)
+            self.self_attn = LineSelfBlock(
+                embed_dim=embed_dim,
+                num_heads=num_heads,
+                flash=flash,
+                bias=bias,
+            )
+        # Cross-attention is UNCHANGED — only receives standard transformer params
+        self.cross_attn = CrossBlock(
+            embed_dim=embed_dim,
+            num_heads=num_heads,
+            flash=flash,
+            bias=bias,
+        )
 
     def forward(
         self,
@@ -73,6 +144,9 @@ class LineTransformerLayer(nn.Module):
         if mask0 is not None and mask1 is not None:
             return self.masked_forward(desc0, desc1, mask0, mask1)
         else:
+            # CHANGED: self_attn is now GraphTransformerBlock which internally
+            # builds a graph and uses graph-biased attention. The call
+            # signature is identical to the original LineSelfBlock.
             desc0 = self.self_attn(desc0)
             desc1 = self.self_attn(desc1)
             return self.cross_attn(desc0, desc1)
@@ -82,6 +156,7 @@ class LineTransformerLayer(nn.Module):
         mask = mask0 & mask1.transpose(-1, -2)
         mask0 = mask0 & mask0.transpose(-1, -2)
         mask1 = mask1 & mask1.transpose(-1, -2)
+        # CHANGED: Graph-enhanced self-attention with padding mask support
         desc0 = self.self_attn(desc0, mask0)
         desc1 = self.self_attn(desc1, mask1)
         return self.cross_attn(desc0, desc1, mask)
@@ -107,6 +182,11 @@ class LineLightGlue(nn.Module):
             "fn": "nll",
             "nll_balancing": 0.5,
         },
+        # CHANGED: New config options for Graph Transformer integration
+        "use_graph_transformer": True,   # Enable GNN+Graph Transformer in self-attention
+        "graph_k_neighbors": 5,          # Number of neighbors in k-NN graph
+        "graph_edge_dim": 4,             # Dimension of edge features
+        "graph_sparse_attention": False,  # If True, mask non-neighbors to -inf
     }
 
     def __init__(self, conf) -> None:
@@ -121,8 +201,19 @@ class LineLightGlue(nn.Module):
 
         h, n, d = conf.num_heads, conf.n_layers, conf.descriptor_dim
 
+        # CHANGED: Pass all graph config parameters to each transformer layer.
+        # When use_graph_transformer=True, LineTransformerLayer uses
+        # GraphTransformerBlock with the specified graph config for self-attention.
         self.transformers = nn.ModuleList(
-            [LineTransformerLayer(d, h, conf.flash) for _ in range(n)]
+            [LineTransformerLayer(
+                embed_dim=d,
+                num_heads=h,
+                use_graph_transformer=conf.use_graph_transformer,
+                graph_k_neighbors=conf.graph_k_neighbors,
+                graph_edge_dim=conf.graph_edge_dim,
+                graph_sparse_attention=conf.graph_sparse_attention,
+                flash=conf.flash,
+            ) for _ in range(n)]
         )
 
         self.log_assignment = nn.ModuleList([MatchAssignment(d) for _ in range(n)])
@@ -174,7 +265,10 @@ class LineLightGlue(nn.Module):
         desc0 = self.input_proj(desc0)
         desc1 = self.input_proj(desc1)
 
-        # GNN + final_proj + assignment
+        # GNN + Graph Transformer + final_proj + assignment
+        # CHANGED: Each transformer layer now applies graph-biased self-attention
+        # (via GraphTransformerBlock) before cross-attention, creating a
+        # GNN-enhanced matching pipeline.
         do_early_stop = self.conf.depth_confidence > 0 and not self.training
 
         all_desc0, all_desc1 = [], []

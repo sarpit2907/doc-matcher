@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GNN + Graph Transformer Integration — DocMatcher Enhancement Proposal</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --primary: #1a365d;
+    --primary-light: #2b6cb0;
+    --accent: #e53e3e;
+    --bg: #ffffff;
+    --text: #1a202c;
+    --text-secondary: #4a5568;
+    --border: #e2e8f0;
+    --code-bg: #f7fafc;
+    --highlight: #ebf8ff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    color: var(--text);
+    line-height: 1.7;
+    font-size: 11pt;
+    max-width: 210mm;
+    margin: 0 auto;
+    padding: 15mm 20mm;
+    background: var(--bg);
+  }
+
+  @media print {
+    body { padding: 0; font-size: 10pt; }
+    .page-break { page-break-before: always; }
+    h2 { page-break-after: avoid; }
+    table, figure { page-break-inside: avoid; }
+  }
+
+  /* Header */
+  .header {
+    border-bottom: 3px solid var(--primary);
+    padding-bottom: 16px;
+    margin-bottom: 24px;
+  }
+  .header h1 {
+    font-size: 20pt;
+    font-weight: 700;
+    color: var(--primary);
+    line-height: 1.2;
+    margin-bottom: 4px;
+  }
+  .header .subtitle {
+    font-size: 12pt;
+    color: var(--primary-light);
+    font-weight: 500;
+  }
+  .header .meta {
+    margin-top: 12px;
+    font-size: 9pt;
+    color: var(--text-secondary);
+    display: flex;
+    gap: 24px;
+  }
+
+  /* Sections */
+  h2 {
+    font-size: 14pt;
+    font-weight: 700;
+    color: var(--primary);
+    margin-top: 28px;
+    margin-bottom: 12px;
+    padding-bottom: 4px;
+    border-bottom: 1.5px solid var(--border);
+  }
+  h3 {
+    font-size: 11pt;
+    font-weight: 600;
+    color: var(--primary-light);
+    margin-top: 18px;
+    margin-bottom: 8px;
+  }
+  h4 {
+    font-size: 10pt;
+    font-weight: 600;
+    color: var(--text);
+    margin-top: 12px;
+    margin-bottom: 6px;
+  }
+
+  p { margin-bottom: 10px; }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 9.5pt;
+  }
+  th {
+    background: var(--primary);
+    color: white;
+    font-weight: 600;
+    padding: 8px 10px;
+    text-align: left;
+  }
+  td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  tr:nth-child(even) { background: #f8fafc; }
+  tr:hover { background: var(--highlight); }
+
+  /* Code */
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8.5pt;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
+  pre {
+    background: #1a202c;
+    color: #e2e8f0;
+    padding: 12px 16px;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 10px 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8pt;
+    line-height: 1.5;
+  }
+  pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    color: inherit;
+  }
+  .keyword { color: #63b3ed; }
+  .comment { color: #718096; font-style: italic; }
+  .string { color: #68d391; }
+  .func { color: #fbd38d; }
+
+  /* Callout boxes */
+  .callout {
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 14px 0;
+    border-left: 4px solid;
+  }
+  .callout-info {
+    background: #ebf8ff;
+    border-color: #3182ce;
+  }
+  .callout-warn {
+    background: #fffaf0;
+    border-color: #dd6b20;
+  }
+  .callout-success {
+    background: #f0fff4;
+    border-color: #38a169;
+  }
+  .callout-label {
+    font-weight: 700;
+    font-size: 9pt;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+
+  /* Figures */
+  .figure {
+    margin: 16px 0;
+    text-align: center;
+  }
+  .figure-box {
+    background: #f7fafc;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    display: inline-block;
+    max-width: 100%;
+  }
+  .figure-caption {
+    font-size: 9pt;
+    color: var(--text-secondary);
+    margin-top: 8px;
+    font-style: italic;
+  }
+
+  /* Architecture diagram */
+  .arch-diagram {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8pt;
+    line-height: 1.4;
+    background: #1a202c;
+    color: #e2e8f0;
+    padding: 16px 20px;
+    border-radius: 8px;
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .arch-new { color: #68d391; font-weight: bold; }
+  .arch-same { color: #a0aec0; }
+  .arch-label { color: #63b3ed; }
+
+  /* Lists */
+  ul, ol {
+    margin: 8px 0 8px 24px;
+  }
+  li { margin-bottom: 4px; }
+
+  /* Equation */
+  .equation {
+    text-align: center;
+    margin: 14px 0;
+    font-size: 11pt;
+    font-style: italic;
+    color: var(--primary);
+  }
+
+  /* File change badges */
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 8pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .badge-new { background: #c6f6d5; color: #22543d; }
+  .badge-mod { background: #fefcbf; color: #744210; }
+  .badge-keep { background: #e2e8f0; color: #4a5568; }
+
+  /* Summary box */
+  .summary-box {
+    background: linear-gradient(135deg, #ebf8ff 0%, #f0fff4 100%);
+    border: 1px solid #bee3f8;
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 16px 0;
+  }
+
+  .footer {
+    margin-top: 32px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    font-size: 8pt;
+    color: var(--text-secondary);
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<!-- =========== HEADER =========== -->
+<div class="header">
+  <h1>Enhancing DocMatcher with GNN + Graph Transformer Architecture</h1>
+  <div class="subtitle">Proposed Modifications to the Line Matching Component</div>
+  <div class="meta">
+    <span><strong>Base Paper:</strong> DocMatcher — WACV 2025 (Hertlein et al.)</span>
+    <span><strong>Date:</strong> April 2025</span>
+  </div>
+</div>
+
+<!-- =========== EXECUTIVE SUMMARY =========== -->
+<div class="summary-box">
+  <h4 style="margin-top:0; color: var(--primary);">Executive Summary</h4>
+  <p style="margin-bottom:0;">
+    This document proposes integrating a <strong>Graph Neural Network (GNN) with Graph Transformer architecture</strong> into DocMatcher's line matching pipeline. The enhancement replaces the fully-connected self-attention in LineLightGlue with <strong>graph-biased attention</strong>, where a k-nearest-neighbor graph models structural relationships between detected document lines. The implementation adds <strong>~14,400 new parameters</strong> (0.3% of total), maintains <strong>full backward compatibility</strong> with pretrained weights, and requires <strong>zero additional dependencies</strong>. Three files are modified with extensive inline documentation.
+  </p>
+</div>
+
+<!-- =========== 1. MOTIVATION =========== -->
+<h2>1. Motivation & Problem Analysis</h2>
+
+<h3>1.1 Current Architecture Limitation</h3>
+<p>
+  DocMatcher's line matching model (LineLightGlue) uses 9 standard Transformer layers, each applying <strong>self-attention</strong> followed by <strong>cross-attention</strong>. The self-attention component (<code>LineSelfBlock</code>) treats all N detected lines as a fully-connected set:
+</p>
+
+<div class="equation">
+  Attention(Q, K, V) = softmax(QK<sup>T</sup> / √d) · V
+</div>
+
+<p>This has two fundamental limitations:</p>
+
+<table>
+  <tr>
+    <th>Limitation</th>
+    <th>Impact</th>
+    <th>Example</th>
+  </tr>
+  <tr>
+    <td><strong>No structural inductive bias</strong></td>
+    <td>Every line attends equally to every other line, regardless of spatial/geometric relationship</td>
+    <td>A header text line attends equally to a distant footer as to its adjacent paragraph line</td>
+  </tr>
+  <tr>
+    <td><strong>O(N²) computation</strong></td>
+    <td>Quadratic cost even for structurally unrelated line pairs</td>
+    <td>For 30 lines: 900 attention pairs computed, most providing little useful context</td>
+  </tr>
+</table>
+
+<h3>1.2 Why Graph Structure is Natural for Documents</h3>
+<p>
+  Document images have inherently <strong>graph-like structure</strong>:
+</p>
+<ul>
+  <li><strong>Text lines</strong> are arranged in reading order — sequential/adjacent lines share style and content</li>
+  <li><strong>Structural lines</strong> (borders, dividers) form geometric patterns — parallel and perpendicular relationships</li>
+  <li><strong>Spatial locality</strong> — nearby lines provide the most useful context for matching</li>
+  <li><strong>Heterogeneous relationships</strong> — text↔text, structural↔structural, and text↔structural interactions differ fundamentally</li>
+</ul>
+
+<div class="callout callout-info">
+  <div class="callout-label">Key Insight</div>
+  Encoding these relationships explicitly as a graph provides strong inductive bias that standard self-attention must learn from data alone.
+</div>
+
+<!-- =========== 2. PROPOSED APPROACH =========== -->
+<h2>2. Proposed Approach</h2>
+
+<h3>2.1 Graph-Biased Attention (Graphormer-style)</h3>
+<p>
+  Following Ying et al. (NeurIPS 2021), we augment the standard attention mechanism with <strong>edge-biased attention</strong>:
+</p>
+
+<div class="equation">
+  Attention(Q, K, V) = softmax(QK<sup>T</sup> / √d + <span style="color: var(--accent);">α · EdgeBias</span>) · V
+</div>
+
+<p>Where:</p>
+<ul>
+  <li><strong>QK<sup>T</sup>/√d</strong> — Standard content-based attention (preserved from original)</li>
+  <li><strong style="color: var(--accent);">EdgeBias</strong> — Learned function of edge features between connected lines (NEW)</li>
+  <li><strong style="color: var(--accent);">α</strong> — Learnable gate parameter controlling graph influence (NEW, initialized to 0.1)</li>
+</ul>
+
+<h3>2.2 Architecture Overview</h3>
+
+<div class="figure">
+  <div class="arch-diagram"><span class="arch-label">ORIGINAL LineSelfBlock:</span>                  <span class="arch-label">PROPOSED GraphTransformerBlock:</span>
+
+  Input x (B, N, 256)                       Input x (B, N, 256)
+        │                                         │
+  ┌─────┴─────┐                              ┌────┴────┐
+  │  Wqkv(x)  │ ← pretrained               │ Wqkv(x) │ ← <span class="arch-same">same pretrained weights</span>
+  └─────┬─────┘                              └────┬────┘
+  ┌─────┴─────┐                         ┌────────┼────────┐
+  │  Q, K, V  │                         │   Q, K, V       │
+  └─────┬─────┘                         └────┬───┘        │
+        │                                    │    <span class="arch-new">┌───────┴───────┐</span>
+  ┌─────┴─────┐                       ┌─────┴─┐ <span class="arch-new">│ build_knn(x)  │</span>
+  │ QK^T / √d │                       │QK^T/√d│ <span class="arch-new">│ edge_features │</span>
+  └─────┬─────┘                       └───┬───┘ <span class="arch-new">│ edge_encoder  │</span>
+        │                                 │    <span class="arch-new">└───────┬───────┘</span>
+        │                                 │    <span class="arch-new">┌───────┴───────┐</span>
+        │                            ┌────┴────<span class="arch-new">┤ + α·EdgeBias  │</span>
+        │                            │         <span class="arch-new">└───────────────┘</span>
+  ┌─────┴─────┐                 ┌────┴────┐
+  │  softmax  │                 │ softmax │
+  └─────┬─────┘                 └────┬────┘
+  ┌─────┴─────┐                 ┌────┴────┐
+  │  × V      │                 │  × V    │
+  └─────┬─────┘                 └────┬────┘
+  ┌─────┴─────┐                 ┌────┴────┐
+  │ out_proj  │ ← pretrained    │out_proj │ ← <span class="arch-same">same pretrained weights</span>
+  └─────┬─────┘                 └────┬────┘
+  ┌─────┴─────┐                 ┌────┴────┐
+  │ x + FFN   │ ← pretrained    │ x + FFN │ ← <span class="arch-same">same pretrained weights</span>
+  └─────┬─────┘                 └────┴────┘
+  Output (B, N, 256)              Output (B, N, 256)</div>
+  <div class="figure-caption">Figure 1: Comparison of original LineSelfBlock vs. proposed GraphTransformerBlock. Green elements are new additions; gray labels indicate preserved pretrained weights.</div>
+</div>
+
+<h3>2.3 Graph Construction</h3>
+
+<p>At each forward pass, a <strong>k-nearest-neighbor graph</strong> is constructed from line descriptors:</p>
+
+<table>
+  <tr>
+    <th>Step</th>
+    <th>Operation</th>
+    <th>Output</th>
+  </tr>
+  <tr>
+    <td><strong>1. Similarity</strong></td>
+    <td>Compute pairwise cosine similarity between all line descriptors</td>
+    <td>Similarity matrix (N × N)</td>
+  </tr>
+  <tr>
+    <td><strong>2. k-NN Selection</strong></td>
+    <td>Select top-k most similar lines as neighbors (k=5 default)</td>
+    <td>Top-k indices per node</td>
+  </tr>
+  <tr>
+    <td><strong>3. Symmetrize</strong></td>
+    <td>Make graph undirected (if A→B, then B→A)</td>
+    <td>Adjacency matrix (N × N)</td>
+  </tr>
+  <tr>
+    <td><strong>4. Edge Features</strong></td>
+    <td>Compute 4 pairwise features for each edge</td>
+    <td>Edge tensor (N × N × 4)</td>
+  </tr>
+</table>
+
+<h4>Edge Feature Design</h4>
+<table>
+  <tr>
+    <th>Feature</th>
+    <th>Dim</th>
+    <th>Description</th>
+    <th>Rationale</th>
+  </tr>
+  <tr>
+    <td>Cosine similarity</td>
+    <td>1</td>
+    <td>Descriptor alignment</td>
+    <td>Similar visual/text content should increase attention</td>
+  </tr>
+  <tr>
+    <td>L2 distance (normalized)</td>
+    <td>1</td>
+    <td>Descriptor magnitude difference</td>
+    <td>Complements cosine sim (captures scale information)</td>
+  </tr>
+  <tr>
+    <td>Mean |Δfeature|</td>
+    <td>1</td>
+    <td>Average element-wise deviation</td>
+    <td>Fine-grained relationship signal</td>
+  </tr>
+  <tr>
+    <td>Max |Δfeature|</td>
+    <td>1</td>
+    <td>Worst-case element-wise deviation</td>
+    <td>Detects outlier dimensions (type differences)</td>
+  </tr>
+</table>
+
+<!-- =========== 3. IMPLEMENTATION =========== -->
+<div class="page-break"></div>
+<h2>3. Implementation Details</h2>
+
+<h3>3.1 Files Changed</h3>
+
+<table>
+  <tr>
+    <th>File</th>
+    <th>Status</th>
+    <th>Lines</th>
+    <th>Purpose</th>
+  </tr>
+  <tr>
+    <td><code>line_lightglue/graph_transformer.py</code></td>
+    <td><span class="badge badge-new">NEW</span></td>
+    <td>~290</td>
+    <td>LineGraphBuilder + GraphTransformerBlock</td>
+  </tr>
+  <tr>
+    <td><code>line_lightglue/line_lightglue_model.py</code></td>
+    <td><span class="badge badge-mod">MODIFIED</span></td>
+    <td>+65</td>
+    <td>Integrate GraphTransformerBlock into pipeline</td>
+  </tr>
+  <tr>
+    <td><code>line_lightglue/lit_line_lightglue.py</code></td>
+    <td><span class="badge badge-mod">MODIFIED</span></td>
+    <td>+35</td>
+    <td>Weight loading compatibility + config</td>
+  </tr>
+  <tr>
+    <td>All other files (inference, dataset, etc.)</td>
+    <td><span class="badge badge-keep">UNCHANGED</span></td>
+    <td>—</td>
+    <td>No modifications needed</td>
+  </tr>
+</table>
+
+<h3>3.2 Key Component: GraphTransformerBlock</h3>
+
+<pre><code><span class="keyword">class</span> <span class="func">GraphTransformerBlock</span>(nn.Module):
+    <span class="string">"""Drop-in replacement for LineSelfBlock with graph-biased attention."""</span>
+
+    <span class="keyword">def</span> <span class="func">__init__</span>(self, embed_dim, num_heads, edge_dim=4, k_neighbors=5, ...):
+        <span class="comment"># ===== ORIGINAL PARAMETERS (weight-compatible) =====</span>
+        self.Wqkv = nn.Linear(embed_dim, 3 * embed_dim)     <span class="comment"># Same name → loads from checkpoint</span>
+        self.out_proj = nn.Linear(embed_dim, embed_dim)      <span class="comment"># Same name → loads from checkpoint</span>
+        self.ffn = nn.Sequential(...)                        <span class="comment"># Same arch → loads from checkpoint</span>
+
+        <span class="comment"># ===== NEW: Graph-specific parameters =====</span>
+        self.graph_builder = LineGraphBuilder(k_neighbors=5) <span class="comment"># Builds k-NN graph</span>
+        self.edge_encoder = nn.Sequential(                   <span class="comment"># Learns edge → attention bias</span>
+            nn.Linear(4, num_heads*2), nn.ReLU(),
+            nn.Linear(num_heads*2, num_heads))
+        self.graph_gate = nn.Parameter(torch.tensor(0.1))    <span class="comment"># Controls graph influence</span>
+
+    <span class="keyword">def</span> <span class="func">forward</span>(self, x, mask=None):
+        <span class="comment"># Step 1: Build graph (NEW)</span>
+        adj_matrix, edge_features = self.graph_builder.build_graph(x)
+
+        <span class="comment"># Step 2: Standard Q, K, V computation (SAME as original)</span>
+        q, k, v = self.Wqkv(x).split(...)
+
+        <span class="comment"># Step 3: Attention logits (SAME as original)</span>
+        attn = (q @ k.T) / sqrt(d)
+
+        <span class="comment"># Step 4: Add graph bias (NEW)</span>
+        edge_bias = self.edge_encoder(edge_features)
+        attn = attn + self.graph_gate * edge_bias
+
+        <span class="comment"># Step 5: Softmax + output (SAME as original)</span>
+        output = softmax(attn) @ v
+        <span class="keyword">return</span> x + self.ffn(torch.cat([x, self.out_proj(output)], -1))</code></pre>
+
+<h3>3.3 Weight Compatibility Strategy</h3>
+
+<div class="callout callout-success">
+  <div class="callout-label">Design Decision</div>
+  All learnable parameter names in <code>GraphTransformerBlock</code> are <strong>identical</strong> to <code>LineSelfBlock</code>. This means pretrained checkpoint weights load correctly into the new architecture without any key remapping.
+</div>
+
+<table>
+  <tr>
+    <th>Checkpoint Key</th>
+    <th>Our Model Key</th>
+    <th>Status</th>
+  </tr>
+  <tr>
+    <td><code>self_attn.Wqkv.weight</code></td>
+    <td><code>self_attn.Wqkv.weight</code></td>
+    <td>✅ Exact match — loads from checkpoint</td>
+  </tr>
+  <tr>
+    <td><code>self_attn.out_proj.weight</code></td>
+    <td><code>self_attn.out_proj.weight</code></td>
+    <td>✅ Exact match — loads from checkpoint</td>
+  </tr>
+  <tr>
+    <td><code>self_attn.ffn.*.weight</code></td>
+    <td><code>self_attn.ffn.*.weight</code></td>
+    <td>✅ Exact match — loads from checkpoint</td>
+  </tr>
+  <tr>
+    <td>—</td>
+    <td><code>self_attn.edge_encoder.*</code></td>
+    <td>🆕 Not in checkpoint — randomly initialized</td>
+  </tr>
+  <tr>
+    <td>—</td>
+    <td><code>self_attn.graph_gate</code></td>
+    <td>🆕 Not in checkpoint — initialized to 0.1</td>
+  </tr>
+</table>
+
+<!-- =========== 4. THEORETICAL ANALYSIS =========== -->
+<div class="page-break"></div>
+<h2>4. Theoretical Analysis</h2>
+
+<h3>4.1 Comparison with Related Work</h3>
+
+<table>
+  <tr>
+    <th>Method</th>
+    <th>Attention Type</th>
+    <th>Graph Structure</th>
+    <th>Application</th>
+  </tr>
+  <tr>
+    <td>SuperGlue (CVPR 2020)</td>
+    <td>Full self + cross attention</td>
+    <td>Implicit (learned)</td>
+    <td>Keypoint matching</td>
+  </tr>
+  <tr>
+    <td>Graphormer (NeurIPS 2021)</td>
+    <td>Edge-biased attention</td>
+    <td>Explicit (given)</td>
+    <td>Molecular property prediction</td>
+  </tr>
+  <tr>
+    <td>LightGlue (ICCV 2023)</td>
+    <td>Full self + cross + pruning</td>
+    <td>None</td>
+    <td>Keypoint matching</td>
+  </tr>
+  <tr>
+    <td><strong>Ours (DocMatcher + GNN)</strong></td>
+    <td><strong>Graph-biased self + full cross</strong></td>
+    <td><strong>Explicit k-NN (constructed)</strong></td>
+    <td><strong>Document line matching</strong></td>
+  </tr>
+</table>
+
+<h3>4.2 Complexity Analysis</h3>
+
+<table>
+  <tr>
+    <th>Component</th>
+    <th>Original</th>
+    <th>Proposed</th>
+  </tr>
+  <tr>
+    <td>Self-attention per layer</td>
+    <td>O(N² · d)</td>
+    <td>O(N² · d) + O(N · k · e) for graph</td>
+  </tr>
+  <tr>
+    <td>With sparse masking</td>
+    <td>O(N² · d)</td>
+    <td>O(N · k · d) — <strong>linear in N</strong></td>
+  </tr>
+  <tr>
+    <td>New parameters per layer</td>
+    <td>0</td>
+    <td>~1,600 (edge encoder + gate)</td>
+  </tr>
+  <tr>
+    <td>Total new parameters</td>
+    <td>0</td>
+    <td>~14,400 across 9 layers</td>
+  </tr>
+  <tr>
+    <td>% of total model</td>
+    <td>—</td>
+    <td>~0.3%</td>
+  </tr>
+</table>
+
+<p>Where N = number of lines (~20-40), k = neighbors (5), d = descriptor dim (256), e = edge features (4).</p>
+
+<h3>4.3 Expected Benefits</h3>
+
+<table>
+  <tr>
+    <th>Benefit</th>
+    <th>Mechanism</th>
+  </tr>
+  <tr>
+    <td><strong>Structural inductive bias</strong></td>
+    <td>Graph edges encode which lines are structurally related; model doesn't need to learn this from data alone</td>
+  </tr>
+  <tr>
+    <td><strong>Better matching in dense layouts</strong></td>
+    <td>Documents with many similar lines benefit from local graph structure to disambiguate</td>
+  </tr>
+  <tr>
+    <td><strong>Robustness to noise</strong></td>
+    <td>Sparse attention ignores distant/irrelevant lines, reducing noise in descriptor refinement</td>
+  </tr>
+  <tr>
+    <td><strong>Efficiency (with sparse mode)</strong></td>
+    <td>O(N·k) instead of O(N²) attention, significant for documents with many detected lines</td>
+  </tr>
+  <tr>
+    <td><strong>Interpretability</strong></td>
+    <td>Graph structure and edge weights can be visualized to understand matching decisions</td>
+  </tr>
+</table>
+
+<!-- =========== 5. CONFIGURATION =========== -->
+<h2>5. Configuration & Ablation Support</h2>
+
+<p>The implementation supports easy ablation via config flags:</p>
+
+<pre><code>conf = {
+    <span class="string">"use_graph_transformer"</span>: True,    <span class="comment"># Toggle: True=Graph, False=Original</span>
+    <span class="string">"graph_k_neighbors"</span>: 5,           <span class="comment"># k-NN connectivity (try: 3, 5, 8, 10)</span>
+    <span class="string">"graph_sparse_attention"</span>: False,  <span class="comment"># True = strict locality masking</span>
+    <span class="string">"graph_edge_dim"</span>: 4,              <span class="comment"># Edge feature dimension</span>
+}</code></pre>
+
+<h3>Suggested Ablation Experiments</h3>
+<table>
+  <tr>
+    <th>Experiment</th>
+    <th>Config Change</th>
+    <th>Tests</th>
+  </tr>
+  <tr>
+    <td>Baseline (original)</td>
+    <td><code>use_graph_transformer: False</code></td>
+    <td>Reproduces original results</td>
+  </tr>
+  <tr>
+    <td>Graph bias only</td>
+    <td><code>use_graph_transformer: True, graph_sparse: False</code></td>
+    <td>Graph influence with full attention</td>
+  </tr>
+  <tr>
+    <td>Sparse graph attention</td>
+    <td><code>use_graph_transformer: True, graph_sparse: True</code></td>
+    <td>Strict locality enforcement</td>
+  </tr>
+  <tr>
+    <td>k sensitivity</td>
+    <td><code>graph_k_neighbors: {3, 5, 8, 10}</code></td>
+    <td>Impact of graph connectivity</td>
+  </tr>
+</table>
+
+<!-- =========== 6. FUTURE WORK =========== -->
+<h2>6. Potential Extensions</h2>
+
+<ol>
+  <li><strong>Spatial graph construction</strong> — Use line centroid coordinates instead of feature-space k-NN for more geometrically meaningful graphs</li>
+  <li><strong>Fine-tuning on Inv3D</strong> — Train the edge encoder and graph gate on the full Inv3D training split to learn optimal edge bias functions</li>
+  <li><strong>Heterogeneous graphs</strong> — Type-specific message passing for text↔text vs. structural↔structural edges</li>
+  <li><strong>Dynamic graph refinement</strong> — Update graph topology across transformer layers (early layers: feature graph, later layers: refined structural graph)</li>
+  <li><strong>Delaunay triangulation</strong> — Use geometric Delaunay triangulation on line centroids for mesh-like connectivity</li>
+</ol>
+
+<!-- =========== 7. REFERENCES =========== -->
+<h2>7. References</h2>
+<ol style="font-size: 9pt;">
+  <li>Hertlein, F., Naumann, A., Sure-Vetter, Y. "DocMatcher: Document Image Dewarping via Structural and Textual Line Matching." <em>WACV</em>, 2025.</li>
+  <li>Ying, C. et al. "Do Transformers Really Perform Bad for Graph Representation Learning?" <em>NeurIPS</em>, 2021. (Graphormer)</li>
+  <li>Dwivedi, V.P., Bresson, X. "A Generalization of Transformer Networks to Graphs." <em>AAAI Workshop</em>, 2021.</li>
+  <li>Sarlin, P.-E. et al. "SuperGlue: Learning Feature Matching with Graph Neural Networks." <em>CVPR</em>, 2020.</li>
+  <li>Lindenberger, P. et al. "LightGlue: Local Feature Matching at Light Speed." <em>ICCV</em>, 2023.</li>
+  <li>Kipf, T., Welling, M. "Semi-Supervised Classification with Graph Convolutional Networks." <em>ICLR</em>, 2017.</li>
+  <li>Veličković, P. et al. "Graph Attention Networks." <em>ICLR</em>, 2018.</li>
+</ol>
+
+<div class="footer">
+  GNN + Graph Transformer Enhancement for DocMatcher — Technical Proposal &nbsp;|&nbsp; April 2025
+</div>
+
+</body>
+</html>
