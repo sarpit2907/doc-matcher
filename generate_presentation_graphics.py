@@ -6,11 +6,11 @@ import torch
 import cv2
 import numpy as np
 
-# Ensure src is in the python path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+# Ensure the entire project root is in the python path to fix relative imports
+sys.path.insert(0, str(Path(__file__).parent))
 
-from line_matching.line_lightglue.line_lightglue_model import LineLightGlue
-from line_matching.line_lightglue.graph_transformer import GraphVisualization
+from src.line_matching.line_lightglue.line_lightglue_model import LineLightGlue
+from src.line_matching.line_lightglue.graph_transformer import GraphVisualization
 
 def main():
     print("Initializing GNN Architecture internally...")

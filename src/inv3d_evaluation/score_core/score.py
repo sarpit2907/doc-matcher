@@ -22,7 +22,7 @@ from .score_doctr import score_dcotr as _score_doctr
 
 @cached({})
 def get_lpips_metric():
-    return lpips.LPIPS(net="alex").cuda()
+    return lpips.LPIPS(net="alex")
 
 
 def score_all(states: List[Dict]) -> pd.DataFrame:
@@ -61,11 +61,11 @@ def _score_msssim(states: List[Dict]):
         norm_image = state["norm_image_scaled"]
 
         true_image = (
-            rearrange(torch.from_numpy(true_image), "h w c -> 1 c h w").cuda().float()
+            rearrange(torch.from_numpy(true_image), "h w c -> 1 c h w").float()
             / 255
         )
         norm_image = (
-            rearrange(torch.from_numpy(norm_image), "h w c -> 1 c h w").cuda().float()
+            rearrange(torch.from_numpy(norm_image), "h w c -> 1 c h w").float()
             / 255
         )
 
@@ -80,11 +80,11 @@ def _score_lpips(states: List[Dict]):
         norm_image = state["norm_image_scaled"]
 
         true_image = (
-            rearrange(torch.from_numpy(true_image), "h w c -> 1 c h w").cuda().float()
+            rearrange(torch.from_numpy(true_image), "h w c -> 1 c h w").float()
             / 255
         )
         norm_image = (
-            rearrange(torch.from_numpy(norm_image), "h w c -> 1 c h w").cuda().float()
+            rearrange(torch.from_numpy(norm_image), "h w c -> 1 c h w").float()
             / 255
         )
 
